@@ -42,7 +42,34 @@ export interface ChapterItem {
   name: string;
   done: boolean;
   revise?: boolean;
+  lastRevisedAt?: string;
 }
+
+export interface MarkItem {
+  id: string;
+  subjectId: string;
+  title: string;
+  scored: number;
+  total: number;
+  date: string;
+}
+
+export interface NoteItem {
+  id: string;
+  subjectId: string;
+  text: string;
+  date: string;
+}
+
+export type WeekdayKey = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+
+export interface RoutineSlot {
+  id: string;
+  title: string;
+  minutes: number;
+}
+
+export type WeeklyRoutine = Record<WeekdayKey, RoutineSlot[]>;
 
 export interface TargetItem {
   id: string;
@@ -84,10 +111,14 @@ export interface StudyWarState {
   profile: UserProfile;
   subjects: SubjectItem[];
   chapters: ChapterItem[];
+  marks: MarkItem[];
+  notes: NoteItem[];
+  weeklyRoutine: WeeklyRoutine;
   targets: TargetItem[];
   plan: PlanItem[];
   tomorrowPlan: PlanItem[];
   homework: HomeworkItem[];
+  focusedTodayMinutes: number;
   settings: AppSettings;
   lastActiveDate: string;
 }

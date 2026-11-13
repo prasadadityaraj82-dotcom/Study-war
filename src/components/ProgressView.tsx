@@ -134,6 +134,24 @@ export function ProgressView() {
           <p className="text-base font-extrabold text-[#8A8A8A] font-mono-num">
             Remaining: {displayRemaining} {displayRemaining === 1 ? 'Task' : 'Tasks'} Left
           </p>
+          {state.focusedTodayMinutes > 0 && (
+            <p className="text-sm font-extrabold font-mono-num text-[#4ADE80] pt-1">
+              Focused: {state.focusedTodayMinutes} Min Today
+            </p>
+          )}
+          {state.marks.length > 0 && (
+            <p
+              className="text-sm font-extrabold font-mono-num pt-1"
+              style={{ color: 'var(--primary)' }}
+            >
+              Marks Avg:{' '}
+              {Math.round(
+                state.marks.reduce((sum, m) => sum + (m.scored / m.total) * 100, 0) /
+                  state.marks.length
+              )}
+              % ({state.marks.length} {state.marks.length === 1 ? 'Test' : 'Tests'})
+            </p>
+          )}
         </div>
       </section>
     </div>

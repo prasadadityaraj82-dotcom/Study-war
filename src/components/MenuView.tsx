@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useStudy } from '../context/StudyContext';
 import { THEMES } from '../data/themes';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export function MenuView() {
   const {
@@ -134,6 +135,9 @@ export function MenuView() {
         <Timer size={18} style={{ color: 'var(--primary)' }} />
         <span>FOCUS MODE</span>
       </button>
+
+      {/* INSTALL APP (PWA — auto-hides if already installed/APK) */}
+      <PWAInstallButton />
 
       {/* 2. APPEARANCE — 8 FLAT THEMES */}
       <section className="card-flat animate-card-in p-5 space-y-4">

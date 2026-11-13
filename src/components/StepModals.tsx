@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pencil, RotateCw, Trash2, X } from 'lucide-react';
+import { CheckCheck, Pencil, RotateCw, Trash2, X } from 'lucide-react';
 import { CLASS_OPTIONS, QUICK_SUBJECT_CHIPS } from '../data/studyData';
 
 export function AddSubjectWizard({
@@ -426,12 +426,211 @@ export function AddChapterModal({
   );
 }
 
+const TEST_NAME_CHIPS = ['Unit Test', 'Weekly Test', 'Mock Test', 'Pre-Board'];
+const TOTAL_MARKS_CHIPS = [20, 40, 80, 100];
+
+export function AddMarkModal({
+  open,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (title: string, scored: number, total: number) => void;
+}) {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [title, setTitle] = useState('');
+  const [scored, setScored] = useState('');
+  const [total, setTotal] = useState('100');
+
+  useEffect(() => {
+    if (open) {
+      setStep(1);
+      setTitle('');
+      setScored('');
+      setTotal('100');
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const scoredNum = Number(scored);
+  const totalNum = Number(total);
+  const scoredValid = scored.trim() !== '' && !Number.isNaN(scoredNum) && scoredNum >= 0;
+  const totalValid =
+    total.trim() !== '' &&
+    !Number.isNaN(totalNum) &&
+    totalNum > 0 &&
+    totalNum >= (scoredValid ? scoredNum : 0);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="dna-card w-full max-w-sm p-5 border border-white/10 space-y-4 animate-item-in">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#8A8A8A]">
+            STEP {step} OF 3
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="btn-flat w-9 h-9 bg-[#000000] text-[#8A8A8A] hover:text-white flex items-center justify-center cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <h2 className="font-display text-2xl font-extrabold uppercase text-white">
+              Test Name?
+            </h2>
+            <div className="flex flex-wrap gap-1.5">
+              {TEST_NAME_CHIPS.map((chip) => {
+                const selected = title === chip;
+                return (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => setTitle(chip)}
+                    className="btn-flat px-3 py-1.5 text-xs cursor-pointer"
+                    style={{
+                      backgroundColor: selected ? 'var(--primary)' : '#000000',
+                      color: selected ? 'var(--hero-text)' : '#D4D4D4',
+                    }}
+                  >
+                    {chip}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="text"
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && title.trim()) setStep(2);
+              }}
+              placeholder="e.g. Unit Test 1"
+              className="w-full min-h-[48px] rounded-[16px] bg-[#000000] border border-white/15 px-4 text-base font-bold text-white placeholder-[#8A8A8A] focus:outline-none focus:border-[var(--primary)]"
+            />
+            <button
+              type="button"
+              disabled={!title.trim()}
+              onClick={() => setStep(2)}
+              className="btn-flat w-full min-h-[48px] text-sm tracking-wider cursor-pointer"
+              style={{
+                backgroundColor: 'var(--primary)',
+                color: 'var(--hero-text)',
+              }}
+            >
+              NEXT
+            </button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            <h2 className="font-display text-2xl font-extrabold uppercase text-white">
+              Marks Scored?
+            </h2>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              autoFocus
+              value={scored}
+              onChange={(e) => setScored(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && scoredValid) setStep(3);
+              }}
+              placeholder="e.g. 36"
+              className="w-full min-h-[48px] rounded-[16px] bg-[#000000] border border-white/15 px-4 text-lg font-mono-num font-bold text-white placeholder-[#8A8A8A] focus:outline-none focus:border-[var(--primary)]"
+            />
+            <button
+              type="button"
+              disabled={!scoredValid}
+              onClick={() => setStep(3)}
+              className="btn-flat w-full min-h-[48px] text-sm tracking-wider cursor-pointer"
+              style={{
+                backgroundColor: 'var(--primary)',
+                color: 'var(--hero-text)',
+              }}
+            >
+              NEXT
+            </button>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <h2 className="font-display text-2xl font-extrabold uppercase text-white">
+              Out Of Total?
+            </h2>
+            <div className="grid grid-cols-4 gap-2">
+              {TOTAL_MARKS_CHIPS.map((t) => {
+                const selected = Number(total) === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTotal(String(t))}
+                    className="btn-flat min-h-[44px] font-mono-num text-sm cursor-pointer"
+                    style={{
+                      backgroundColor: selected ? 'var(--primary)' : '#000000',
+                      color: selected ? 'var(--hero-text)' : '#FFFFFF',
+                    }}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="number"
+              min={1}
+              step="1"
+              value={total}
+              onChange={(e) => setTotal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && totalValid) {
+                  onSave(title.trim(), scoredNum, totalNum);
+                  onClose();
+                }
+              }}
+              placeholder="e.g. 40"
+              className="w-full min-h-[48px] rounded-[16px] bg-[#000000] border border-white/15 px-4 text-lg font-mono-num font-bold text-white placeholder-[#8A8A8A] focus:outline-none focus:border-[var(--primary)]"
+            />
+            <button
+              type="button"
+              disabled={!totalValid}
+              onClick={() => {
+                onSave(title.trim(), scoredNum, totalNum);
+                onClose();
+              }}
+              className="btn-flat w-full min-h-[48px] text-sm tracking-wider cursor-pointer"
+              style={{
+                backgroundColor: 'var(--primary)',
+                color: 'var(--hero-text)',
+              }}
+            >
+              SAVE
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function LongPressActionModal({
   open,
   itemLabel,
   allowEdit = true,
   reviseActive,
   onToggleRevise,
+  onMarkRevised,
   onClose,
   onEdit,
   onDelete,
@@ -441,6 +640,7 @@ export function LongPressActionModal({
   allowEdit?: boolean;
   reviseActive?: boolean;
   onToggleRevise?: () => void;
+  onMarkRevised?: () => void;
   onClose: () => void;
   onEdit?: (newName: string) => void;
   onDelete: () => void;
@@ -507,6 +707,19 @@ export function LongPressActionModal({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2.5">
+            {onMarkRevised && (
+              <button
+                type="button"
+                onClick={() => {
+                  onMarkRevised();
+                  onClose();
+                }}
+                className="btn-flat min-h-[48px] bg-[#22C55E] text-white text-sm tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <CheckCheck size={16} />
+                <span>REVISED TODAY</span>
+              </button>
+            )}
             {onToggleRevise && (
               <button
                 type="button"

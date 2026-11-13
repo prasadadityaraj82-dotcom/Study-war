@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { getTodayDateKey, INITIAL_STATE, SUBJECT_COLORS } from '../data/studyData';
+import {
+  createEmptyRoutine,
+  getTodayDateKey,
+  getTodayWeekdayKey,
+  INITIAL_STATE,
+  SUBJECT_COLORS,
+  WEEKDAYS,
+} from '../data/studyData';
 import { DEFAULT_THEME_ID, THEMES } from '../data/themes';
 import {
   AppSettings,
@@ -9,6 +16,8 @@ import {
   ThemeConfig,
   ThemeId,
   UserProfile,
+  WeekdayKey,
+  WeeklyRoutine,
 } from '../types';
 import { soundEngine } from '../utils/soundEngine';
 
@@ -36,6 +45,8 @@ interface StudyContextValue {
   setTheme: (themeId: ThemeId) => void;
   toast: string | null;
   showToast: (msg: string) => void;
+  celebrationCount: number;
+  logFocusSession: (minutes: number) => void;
 
   // Profile & Settings
   updateProfile: (profile: UserProfile) => void;
@@ -51,8 +62,24 @@ interface StudyContextValue {
   addBulkChapters: (subjectId: string, fromNum: number, toNum: number) => void;
   toggleChapterDone: (chapterId: string) => void;
   toggleChapterRevise: (chapterId: string) => void;
+  markChapterRevised: (chapterId: string) => void;
   renameChapter: (chapterId: string, name: string) => void;
   deleteChapter: (chapterId: string) => void;
+
+  // Marks Log
+  addMark: (subjectId: string, title: string, scored: number, total: number) => void;
+  deleteMark: (id: string) => void;
+
+  // Subject Notes (Mistakes / Formulas)
+  addNote: (subjectId: string, text: string) => void;
+  editNote: (id: string, text: string) => void;
+  deleteNote: (id: string) => void;
+
+  // Weekly Routine
+  addRoutineSlot: (day: WeekdayKey, title: string, minutes: number) => void;
+  renameRoutineSlot: (day: WeekdayKey, id: string, title: string) => void;
+  deleteRoutineSlot: (day: WeekdayKey, id: string) => void;
+  loadTodayRoutine: () => void;
 
   // Today's Target
   addTarget: (text: string) => void;
@@ -63,12 +90,14 @@ interface StudyContextValue {
   // Today's Plan (Schedule)
   addPlanItem: (title: string, minutes: number) => void;
   togglePlanDone: (id: string) => void;
+  renamePlanItem: (id: string, title: string) => void;
   deletePlanItem: (id: string) => void;
   clearDonePlan: () => void;
 
   // Tomorrow's Plan
   addTomorrowItem: (title: string, minutes: number) => void;
   toggleTomorrowDone: (id: string) => void;
+  renameTomorrowItem: (id: string, title: string) => void;
   deleteTomorrowItem: (id: string) => void;
 
   // Pending Tasks
@@ -79,6 +108,7 @@ interface StudyContextValue {
   // Homework
   addHomework: (text: string) => void;
   toggleHomeworkDone: (id: string) => void;
+  renameHomework: (id: string, text: string) => void;
   deleteHomework: (id: string) => void;
   clearDoneHomework: () => void;
 
@@ -92,6 +122,15 @@ interface StudyContextValue {
 }
 
 const StudyContext = createContext<StudyContextValue | null>(null);
+
+function normalizeRoutine(raw?: Partial<WeeklyRoutine>): WeeklyRoutine {
+  const base = createEmptyRoutine();
+  if (!raw || typeof raw !== 'object') return base;
+  for (const day of WEEKDAYS) {
+    base[day] = Array.isArray(raw[day]) ? raw[day]! : [];
+  }
+  return base;
+}
 
 function normalizeState(parsed: Partial<StudyWarState>, savedTheme?: ThemeId | null): StudyWarState {
   return {
@@ -108,10 +147,17 @@ function normalizeState(parsed: Partial<StudyWarState>, savedTheme?: ThemeId | n
     },
     subjects: Array.isArray(parsed.subjects) ? parsed.subjects : [],
     chapters: Array.isArray(parsed.chapters) ? parsed.chapters : [],
+    marks: Array.isArray(parsed.marks) ? parsed.marks : [],
+    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+    weeklyRoutine: normalizeRoutine(parsed.weeklyRoutine),
     targets: Array.isArray(parsed.targets) ? parsed.targets : [],
     plan: Array.isArray(parsed.plan) ? parsed.plan : [],
     tomorrowPlan: Array.isArray(parsed.tomorrowPlan) ? parsed.tomorrowPlan : [],
     homework: Array.isArray(parsed.homework) ? parsed.homework : [],
+    focusedTodayMinutes:
+      typeof parsed.focusedTodayMinutes === 'number' && parsed.focusedTodayMinutes >= 0
+        ? parsed.focusedTodayMinutes
+        : 0,
     lastActiveDate: parsed.lastActiveDate || getTodayDateKey(),
   };
 }
@@ -138,6 +184,7 @@ function rolloverStateIfNewDay(
       ...state,
       plan: [...state.plan, ...movedItems],
       tomorrowPlan: [],
+      focusedTodayMinutes: 0,
       lastActiveDate: todayKey,
     },
     movedCount: movedItems.length,
@@ -188,10 +235,14 @@ function buildContentSignature(s: StudyWarState): string {
     profile: s.profile,
     subjects: s.subjects,
     chapters: s.chapters,
+    marks: s.marks,
+    notes: s.notes,
+    weeklyRoutine: s.weeklyRoutine,
     targets: s.targets,
     plan: s.plan,
     tomorrowPlan: s.tomorrowPlan,
     homework: s.homework,
+    focusedTodayMinutes: s.focusedTodayMinutes,
   });
 }
 
@@ -202,6 +253,7 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
   const [focusLaunchCount, setFocusLaunchCount] = useState(0);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [celebrationCount, setCelebrationCount] = useState(0);
 
   const lastAutoSigRef = useRef<string>(buildContentSignature(state));
   const prevBackupModeRef = useRef(state.settings.backupMode);
@@ -270,6 +322,21 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showToast = (msg: string) => setToast(msg);
+
+  const celebrate = (cheer: string) => {
+    setCelebrationCount((c) => c + 1);
+    setToast(cheer);
+    window.setTimeout(() => soundEngine.playWarWon(), 120);
+  };
+
+  const logFocusSession = (minutes: number) => {
+    const safeMin = Math.max(1, Math.round(minutes));
+    setState((prev) => ({
+      ...prev,
+      focusedTodayMinutes: (prev.focusedTodayMinutes || 0) + safeMin,
+    }));
+    celebrate('LOCKED IN!');
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -386,6 +453,8 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       subjects: prev.subjects.filter((s) => s.id !== id),
       chapters: prev.chapters.filter((c) => c.subjectId !== id),
+      marks: prev.marks.filter((m) => m.subjectId !== id),
+      notes: prev.notes.filter((n) => n.subjectId !== id),
     }));
     if (selectedSubjectId === id) {
       setSelectedSubjectId(null);
@@ -431,11 +500,28 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
 
   const toggleChapterDone = (chapterId: string) => {
     const target = state.chapters.find((c) => c.id === chapterId);
-    if (target) soundEngine.playTick(!target.done);
+    const nextDone = target ? !target.done : true;
+    if (target) soundEngine.playTick(nextDone);
+    if (target && nextDone) {
+      const siblingChapters = state.chapters.filter((c) => c.subjectId === target.subjectId);
+      if (
+        siblingChapters.length > 0 &&
+        siblingChapters.every((c) => (c.id === chapterId ? nextDone : c.done))
+      ) {
+        celebrate('SUBJECT CRUSHED!');
+      }
+    }
+    const todayKey = getTodayDateKey();
     setState((prev) => ({
       ...prev,
       chapters: prev.chapters.map((c) =>
-        c.id === chapterId ? { ...c, done: !c.done } : c
+        c.id === chapterId
+          ? {
+              ...c,
+              done: !c.done,
+              lastRevisedAt: nextDone ? todayKey : c.lastRevisedAt,
+            }
+          : c
       ),
     }));
   };
@@ -451,6 +537,20 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
       ),
     }));
     showToast(nextRevise ? 'Marked Revise' : 'Revise Removed');
+  };
+
+  const markChapterRevised = (chapterId: string) => {
+    const todayKey = getTodayDateKey();
+    soundEngine.playTick(true);
+    setState((prev) => ({
+      ...prev,
+      chapters: prev.chapters.map((c) =>
+        c.id === chapterId
+          ? { ...c, lastRevisedAt: todayKey, revise: false }
+          : c
+      ),
+    }));
+    showToast('Revised Today');
   };
 
   const renameChapter = (chapterId: string, name: string) => {
@@ -472,6 +572,154 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
     }));
     soundEngine.playDelete();
     showToast('Deleted');
+  };
+
+  // Marks Log
+  const addMark = (subjectId: string, title: string, scored: number, total: number) => {
+    const trimmed = title.trim();
+    if (!trimmed || total <= 0) return;
+    const safeScored = Math.max(0, Math.min(scored, total));
+    setState((prev) => ({
+      ...prev,
+      marks: [
+        {
+          id: `mk-${Date.now()}`,
+          subjectId,
+          title: trimmed,
+          scored: safeScored,
+          total,
+          date: getTodayDateKey(),
+        },
+        ...prev.marks,
+      ],
+    }));
+    soundEngine.playAdd();
+    showToast('Marks Saved');
+  };
+
+  const deleteMark = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      marks: prev.marks.filter((m) => m.id !== id),
+    }));
+    soundEngine.playDelete();
+    showToast('Deleted');
+  };
+
+  // Subject Notes (Mistakes / Formulas)
+  const addNote = (subjectId: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      notes: [
+        {
+          id: `nt-${Date.now()}`,
+          subjectId,
+          text: trimmed,
+          date: getTodayDateKey(),
+        },
+        ...prev.notes,
+      ],
+    }));
+    soundEngine.playAdd();
+    showToast('Note Saved');
+  };
+
+  const editNote = (id: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      notes: prev.notes.map((n) => (n.id === id ? { ...n, text: trimmed } : n)),
+    }));
+    showToast('Updated');
+  };
+
+  const deleteNote = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      notes: prev.notes.filter((n) => n.id !== id),
+    }));
+    soundEngine.playDelete();
+    showToast('Deleted');
+  };
+
+  // Weekly Routine
+  const addRoutineSlot = (day: WeekdayKey, title: string, minutes: number) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      weeklyRoutine: {
+        ...prev.weeklyRoutine,
+        [day]: [
+          ...prev.weeklyRoutine[day],
+          { id: `rt-${Date.now()}`, title: trimmed, minutes },
+        ],
+      },
+    }));
+    soundEngine.playAdd();
+    showToast(`Added to ${day}`);
+  };
+
+  const renameRoutineSlot = (day: WeekdayKey, id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      weeklyRoutine: {
+        ...prev.weeklyRoutine,
+        [day]: prev.weeklyRoutine[day].map((slot) =>
+          slot.id === id ? { ...slot, title: trimmed } : slot
+        ),
+      },
+    }));
+    showToast('Updated');
+  };
+
+  const deleteRoutineSlot = (day: WeekdayKey, id: string) => {
+    setState((prev) => ({
+      ...prev,
+      weeklyRoutine: {
+        ...prev.weeklyRoutine,
+        [day]: prev.weeklyRoutine[day].filter((slot) => slot.id !== id),
+      },
+    }));
+    soundEngine.playDelete();
+    showToast('Deleted');
+  };
+
+  const loadTodayRoutine = () => {
+    const todayKey = getTodayWeekdayKey();
+    const todaySlots = state.weeklyRoutine[todayKey] || [];
+    if (todaySlots.length === 0) {
+      showToast('No Routine Today');
+      return;
+    }
+    const existingTitles = new Set(
+      state.plan.map((p) => p.title.trim().toLowerCase())
+    );
+    const baseTime = Date.now();
+    const toAdd = todaySlots
+      .filter((slot) => !existingTitles.has(slot.title.trim().toLowerCase()))
+      .map((slot, idx) => ({
+        id: `pl-${baseTime}-${idx}`,
+        title: slot.title,
+        minutes: slot.minutes,
+        done: false,
+      }));
+
+    if (toAdd.length === 0) {
+      showToast('Already Loaded');
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      plan: [...prev.plan, ...toAdd],
+    }));
+    soundEngine.playAdd();
+    showToast(`${toAdd.length} Added to Today`);
   };
 
   // Targets
@@ -496,7 +744,7 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
         state.targets.length > 0 &&
         state.targets.every((t) => (t.id === id ? nextDone : t.done))
       ) {
-        window.setTimeout(() => soundEngine.playWarWon(), 140);
+        celebrate('WAR WON!');
       }
     }
     setState((prev) => ({
@@ -538,11 +786,31 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
 
   const togglePlanDone = (id: string) => {
     const item = state.plan.find((p) => p.id === id);
-    if (item) soundEngine.playTick(!item.done);
+    if (item) {
+      const nextDone = !item.done;
+      soundEngine.playTick(nextDone);
+      if (
+        nextDone &&
+        state.plan.length > 0 &&
+        state.plan.every((p) => (p.id === id ? nextDone : p.done))
+      ) {
+        celebrate('PLAN CLEARED!');
+      }
+    }
     setState((prev) => ({
       ...prev,
       plan: prev.plan.map((p) => (p.id === id ? { ...p, done: !p.done } : p)),
     }));
+  };
+
+  const renamePlanItem = (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      plan: prev.plan.map((p) => (p.id === id ? { ...p, title: trimmed } : p)),
+    }));
+    showToast('Updated');
   };
 
   const deletePlanItem = (id: string) => {
@@ -587,6 +855,18 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
         p.id === id ? { ...p, done: !p.done } : p
       ),
     }));
+  };
+
+  const renameTomorrowItem = (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      tomorrowPlan: prev.tomorrowPlan.map((p) =>
+        p.id === id ? { ...p, title: trimmed } : p
+      ),
+    }));
+    showToast('Updated');
   };
 
   const deleteTomorrowItem = (id: string) => {
@@ -664,11 +944,31 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
 
   const toggleHomeworkDone = (id: string) => {
     const item = state.homework.find((h) => h.id === id);
-    if (item) soundEngine.playTick(!item.done);
+    if (item) {
+      const nextDone = !item.done;
+      soundEngine.playTick(nextDone);
+      if (
+        nextDone &&
+        state.homework.length > 0 &&
+        state.homework.every((h) => (h.id === id ? nextDone : h.done))
+      ) {
+        celebrate('WORK DONE!');
+      }
+    }
     setState((prev) => ({
       ...prev,
       homework: prev.homework.map((h) => (h.id === id ? { ...h, done: !h.done } : h)),
     }));
+  };
+
+  const renameHomework = (id: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setState((prev) => ({
+      ...prev,
+      homework: prev.homework.map((h) => (h.id === id ? { ...h, text: trimmed } : h)),
+    }));
+    showToast('Updated');
   };
 
   const deleteHomework = (id: string) => {
@@ -766,6 +1066,8 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
         setTheme,
         toast,
         showToast,
+        celebrationCount,
+        logFocusSession,
         updateProfile,
         updateSettings,
         dismissEditHint,
@@ -777,24 +1079,37 @@ export function StudyProvider({ children }: { children: React.ReactNode }) {
         addBulkChapters,
         toggleChapterDone,
         toggleChapterRevise,
+        markChapterRevised,
         renameChapter,
         deleteChapter,
+        addMark,
+        deleteMark,
+        addNote,
+        editNote,
+        deleteNote,
+        addRoutineSlot,
+        renameRoutineSlot,
+        deleteRoutineSlot,
+        loadTodayRoutine,
         addTarget,
         toggleTargetDone,
         renameTarget,
         deleteTarget,
         addPlanItem,
         togglePlanDone,
+        renamePlanItem,
         deletePlanItem,
         clearDonePlan,
         addTomorrowItem,
         toggleTomorrowDone,
+        renameTomorrowItem,
         deleteTomorrowItem,
         getPendingTasks,
         movePendingToTomorrow,
         deletePendingItem,
         addHomework,
         toggleHomeworkDone,
+        renameHomework,
         deleteHomework,
         clearDoneHomework,
         backups,

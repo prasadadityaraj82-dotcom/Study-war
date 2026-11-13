@@ -30,6 +30,8 @@ function TomorrowCard({
         if (e.key === 'Enter' || e.key === ' ') onToggle();
       }}
       className={`card-flat animate-item-in pl-4 pr-2.5 py-4 sm:py-5 flex items-center gap-3.5 cursor-pointer border transition-all duration-150 ${
+        item.done ? 'card-done-sweep ' : ''
+      }${
         isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : ''
       }`}
       style={{
@@ -71,8 +73,14 @@ function TomorrowCard({
 }
 
 export function TomorrowView() {
-  const { state, addTomorrowItem, toggleTomorrowDone, deleteTomorrowItem, dismissEditHint } =
-    useStudy();
+  const {
+    state,
+    addTomorrowItem,
+    renameTomorrowItem,
+    toggleTomorrowDone,
+    deleteTomorrowItem,
+    dismissEditHint,
+  } = useStudy();
 
   const [showAdd, setShowAdd] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -81,6 +89,16 @@ export function TomorrowView() {
   const [deleteTarget, setDeleteTarget] = useState<PlanItem | null>(null);
 
   const showHint = !state.settings.editHintDismissed;
+
+  const quickChips = Array.from(
+    new Set([
+      ...state.subjects.map((s) => s.name),
+      ...[...state.chapters]
+        .sort((a, b) => Number(a.done) - Number(b.done))
+        .map((c) => c.name),
+    ])
+  ).slice(0, 10);
+
   const openMenu = (item: PlanItem) => {
     dismissEditHint();
     setDeleteTarget(item);
@@ -101,7 +119,7 @@ export function TomorrowView() {
         </h1>
         {showHint && state.tomorrowPlan.length > 0 && (
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#8A8A8A] shrink-0">
-            HOLD TO DELETE
+            HOLD TO EDIT
           </span>
         )}
       </div>
@@ -177,6 +195,27 @@ export function TomorrowView() {
                 <h2 className="font-display text-2xl font-extrabold uppercase text-white">
                   What to Study?
                 </h2>
+                {quickChips.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto no-scrollbar">
+                    {quickChips.map((chip) => {
+                      const selected = title === chip;
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setTitle(chip)}
+                          className="btn-flat px-3 py-1.5 text-xs cursor-pointer"
+                          style={{
+                            backgroundColor: selected ? 'var(--primary)' : '#000000',
+                            color: selected ? 'var(--hero-text)' : '#D4D4D4',
+                          }}
+                        >
+                          {chip}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <input
                   type="text"
                   autoFocus
@@ -247,9 +286,11 @@ export function TomorrowView() {
 
       <LongPressActionModal
         open={Boolean(deleteTarget)}
-        itemLabel={deleteTarget ? `${deleteTarget.title} - ${deleteTarget.minutes} min` : ''}
-        allowEdit={false}
+        itemLabel={deleteTarget?.title || ''}
         onClose={() => setDeleteTarget(null)}
+        onEdit={(newTitle) => {
+          if (deleteTarget) renameTomorrowItem(deleteTarget.id, newTitle);
+        }}
         onDelete={() => {
           if (deleteTarget) deleteTomorrowItem(deleteTarget.id);
         }}

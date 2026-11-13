@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, MoreVertical, Plus, Timer, X } from 'lucide-react';
+import { CalendarPlus, Check, MoreVertical, Plus, Timer, X } from 'lucide-react';
 import { useStudy } from '../context/StudyContext';
+import { getTodayWeekdayKey, WEEKDAYS } from '../data/studyData';
 import { useLongPress } from '../hooks/useLongPress';
-import { PlanItem } from '../types';
+import { PlanItem, RoutineSlot, WeekdayKey } from '../types';
 import { LongPressActionModal } from './StepModals';
 
-const MINUTE_CHIPS = [15, 30, 60];
+const MINUTE_CHIPS = [15, 30, 45, 60];
 
 function PlanCard({
   item,
@@ -30,6 +31,8 @@ function PlanCard({
         if (e.key === 'Enter' || e.key === ' ') onToggle();
       }}
       className={`card-flat animate-item-in pl-4 pr-2.5 py-4 sm:py-5 flex items-center gap-3.5 cursor-pointer border transition-all duration-150 ${
+        item.done ? 'card-done-sweep ' : ''
+      }${
         isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : ''
       }`}
       style={{
@@ -70,31 +73,92 @@ function PlanCard({
   );
 }
 
+function RoutineCard({
+  slot,
+  index,
+  onOpenMenu,
+}: {
+  slot: RoutineSlot;
+  index: number;
+  onOpenMenu: () => void;
+}) {
+  const { handlers, isHolding } = useLongPress(onOpenMenu, onOpenMenu);
+
+  return (
+    <div
+      {...handlers}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onOpenMenu();
+      }}
+      style={{
+        animationDelay: `${Math.min(index * 60, 240)}ms`,
+        borderColor: isHolding ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
+      }}
+      className={`card-flat animate-item-in pl-4 pr-2.5 py-4 flex items-center justify-between gap-3 cursor-pointer border transition-all duration-150 ${
+        isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : ''
+      }`}
+    >
+      <span className="text-base sm:text-lg font-extrabold text-white flex-1 min-w-0 break-words">
+        {slot.title} - {slot.minutes} min
+      </span>
+
+      <button
+        type="button"
+        data-card-menu="true"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenMenu();
+        }}
+        aria-label={`Delete ${slot.title}`}
+        className="btn-flat w-8 h-8 !rounded-full flex items-center justify-center text-[#8A8A8A] hover:text-white shrink-0 cursor-pointer"
+      >
+        <MoreVertical size={17} />
+      </button>
+    </div>
+  );
+}
+
 export function ScheduleView() {
   const {
     state,
     setActiveTab,
     addPlanItem,
+    renamePlanItem,
     togglePlanDone,
     deletePlanItem,
     clearDonePlan,
+    addRoutineSlot,
+    renameRoutineSlot,
+    deleteRoutineSlot,
+    loadTodayRoutine,
     dismissEditHint,
   } = useStudy();
 
-  const [showAdd, setShowAdd] = useState(false);
+  const todayWeekday = getTodayWeekdayKey();
+  const [scheduleTab, setScheduleTab] = useState<'TODAY' | 'ROUTINE'>('TODAY');
+  const [selectedDay, setSelectedDay] = useState<WeekdayKey>(todayWeekday);
+
+  const [addMode, setAddMode] = useState<'TODAY' | 'ROUTINE' | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
   const [title, setTitle] = useState('');
   const [minutes, setMinutes] = useState<number>(30);
   const [deleteTarget, setDeleteTarget] = useState<PlanItem | null>(null);
+  const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<RoutineSlot | null>(null);
 
   const showHint = !state.settings.editHintDismissed;
   const hasDone = state.plan.some((p) => p.done);
-  const chapterChips = Array.from(
-    new Set(
-      [...state.chapters]
+  const todayRoutineSlots = state.weeklyRoutine[todayWeekday] || [];
+  const selectedDaySlots = state.weeklyRoutine[selectedDay] || [];
+
+  const quickChips = Array.from(
+    new Set([
+      ...state.subjects.map((s) => s.name),
+      ...[...state.chapters]
         .sort((a, b) => Number(a.done) - Number(b.done))
-        .map((c) => c.name)
-    )
+        .map((c) => c.name),
+    ])
   ).slice(0, 10);
 
   const openMenu = (item: PlanItem) => {
@@ -102,29 +166,36 @@ export function ScheduleView() {
     setDeleteTarget(item);
   };
 
-  const openAdd = () => {
+  const openRoutineMenu = (slot: RoutineSlot) => {
+    dismissEditHint();
+    setDeleteRoutineTarget(slot);
+  };
+
+  const openAdd = (mode: 'TODAY' | 'ROUTINE') => {
     setStep(1);
     setTitle('');
     setMinutes(30);
-    setShowAdd(true);
+    setAddMode(mode);
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-baseline gap-2.5 min-w-0">
           <h1 className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-wide text-white">
-            TODAY&apos;S PLAN
+            {scheduleTab === 'TODAY' ? "TODAY'S PLAN" : 'WEEKLY ROUTINE'}
           </h1>
-          {showHint && state.plan.length > 0 && (
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#8A8A8A]">
-              HOLD TO DELETE
-            </span>
-          )}
+          {showHint &&
+            ((scheduleTab === 'TODAY' && state.plan.length > 0) ||
+              (scheduleTab === 'ROUTINE' && selectedDaySlots.length > 0)) && (
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#8A8A8A]">
+                HOLD TO EDIT
+              </span>
+            )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {hasDone && (
+          {scheduleTab === 'TODAY' && hasDone && (
             <button
               type="button"
               onClick={clearDonePlan}
@@ -133,10 +204,20 @@ export function ScheduleView() {
               CLEAR DONE
             </button>
           )}
+          {scheduleTab === 'TODAY' && todayRoutineSlots.length > 0 && (
+            <button
+              type="button"
+              onClick={loadTodayRoutine}
+              className="btn-flat px-3 py-2 bg-[#1E1E1E] text-white text-xs tracking-wider flex items-center gap-1.5 border border-white/10 cursor-pointer"
+            >
+              <CalendarPlus size={14} style={{ color: 'var(--primary)' }} />
+              <span>LOAD TODAY</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('FOCUS')}
-            className="btn-flat px-3.5 py-2.5 bg-[#1E1E1E] text-white text-xs tracking-wider flex items-center gap-1.5 cursor-pointer"
+            className="btn-flat px-3.5 py-2 bg-[#1E1E1E] text-white text-xs tracking-wider flex items-center gap-1.5 cursor-pointer"
           >
             <Timer size={15} />
             <span>FOCUS</span>
@@ -144,56 +225,192 @@ export function ScheduleView() {
         </div>
       </div>
 
-      {state.plan.length === 0 ? (
-        <div className="min-h-[52vh] flex flex-col items-center justify-center text-center space-y-5">
-          <p className="font-display text-3xl font-extrabold uppercase text-[#8A8A8A]">
-            Nothing for Today
-          </p>
-          {/* Main 3D Pink Button #4: [ADD FOR TODAY] */}
-          <button
-            type="button"
-            onClick={openAdd}
-            className="btn-3d-main min-h-[54px] px-7 tracking-wider flex items-center gap-2 cursor-pointer"
-          >
-            <Plus size={20} strokeWidth={3} />
-            <span>ADD FOR TODAY</span>
-          </button>
-        </div>
+      {/* Flat Segmented Switch: TODAY | ROUTINE */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[#1E1E1E] p-1 border border-white/[0.06]">
+        {(['TODAY', 'ROUTINE'] as const).map((tab) => {
+          const active = scheduleTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setScheduleTab(tab)}
+              className="btn-flat min-h-[40px] !rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer"
+              style={{
+                backgroundColor: active ? 'var(--primary)' : 'transparent',
+                color: active ? 'var(--hero-text)' : '#8A8A8A',
+              }}
+            >
+              {tab}
+            </button>
+          );
+        })}
+      </div>
+
+      {scheduleTab === 'TODAY' ? (
+        state.plan.length === 0 ? (
+          <div className="min-h-[48vh] flex flex-col items-center justify-center text-center space-y-4">
+            <p className="font-display text-3xl font-extrabold uppercase text-[#8A8A8A]">
+              Nothing for Today
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {/* Main 3D Pink Button #4: [ADD FOR TODAY] */}
+              <button
+                type="button"
+                onClick={() => openAdd('TODAY')}
+                className="btn-3d-main min-h-[54px] px-7 tracking-wider flex items-center gap-2 cursor-pointer"
+              >
+                <Plus size={20} strokeWidth={3} />
+                <span>ADD FOR TODAY</span>
+              </button>
+
+              {todayRoutineSlots.length > 0 && (
+                <button
+                  type="button"
+                  onClick={loadTodayRoutine}
+                  className="btn-flat min-h-[50px] px-5 bg-[#1E1E1E] text-white text-xs tracking-wider flex items-center gap-2 border border-white/10 cursor-pointer"
+                >
+                  <CalendarPlus size={16} style={{ color: 'var(--primary)' }} />
+                  <span>LOAD {todayWeekday}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2.5 pb-[100px]">
+              {state.plan.map((item, idx) => (
+                <PlanCard
+                  key={item.id}
+                  item={item}
+                  index={idx}
+                  onToggle={() => togglePlanDone(item.id)}
+                  onOpenMenu={() => openMenu(item)}
+                />
+              ))}
+            </div>
+
+            {/* Fixed Bottom Full-Width [ADD FOR TODAY] Button */}
+            {typeof document !== 'undefined' &&
+              createPortal(
+                <div className="fixed bottom-[80px] left-0 right-0 z-30 px-4 pointer-events-none">
+                  <div className="max-w-5xl mx-auto">
+                    <button
+                      type="button"
+                      onClick={() => openAdd('TODAY')}
+                      className="btn-3d-main pointer-events-auto w-full min-h-[54px] tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Plus size={20} strokeWidth={3} />
+                      <span>ADD FOR TODAY</span>
+                    </button>
+                  </div>
+                </div>,
+                document.body
+              )}
+          </>
+        )
       ) : (
-        <>
-          <div className="space-y-2.5 pb-[100px]">
-            {state.plan.map((item, idx) => (
-              <PlanCard
-                key={item.id}
-                item={item}
-                index={idx}
-                onToggle={() => togglePlanDone(item.id)}
-                onOpenMenu={() => openMenu(item)}
-              />
-            ))}
+        <div className="space-y-4 pb-8">
+          {/* 7-Day Flat Selector */}
+          <div className="grid grid-cols-7 gap-1.5">
+            {WEEKDAYS.map((day) => {
+              const active = selectedDay === day;
+              const isToday = day === todayWeekday;
+              const count = (state.weeklyRoutine[day] || []).length;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setSelectedDay(day)}
+                  className="btn-flat min-h-[46px] !rounded-xl flex flex-col items-center justify-center border cursor-pointer"
+                  style={{
+                    backgroundColor: active ? 'var(--primary)' : '#1E1E1E',
+                    color: active ? 'var(--hero-text)' : '#FFFFFF',
+                    borderColor: active
+                      ? 'var(--primary)'
+                      : isToday
+                        ? 'rgba(255,255,255,0.28)'
+                        : 'rgba(255,255,255,0.06)',
+                  }}
+                >
+                  <span className="text-[11px] font-extrabold tracking-wide">{day}</span>
+                  {count > 0 && (
+                    <span
+                      className="text-[9px] font-mono-num font-bold leading-none mt-0.5"
+                      style={{ opacity: active ? 0.9 : 0.6 }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Fixed Bottom Full-Width [ADD FOR TODAY] Button */}
-          {typeof document !== 'undefined' &&
-            createPortal(
-              <div className="fixed bottom-[80px] left-0 right-0 z-30 px-4 pointer-events-none">
-                <div className="max-w-5xl mx-auto">
+          {selectedDaySlots.length === 0 ? (
+            <div className="card-flat p-8 text-center space-y-4">
+              <p className="font-display text-xl font-extrabold uppercase text-[#8A8A8A]">
+                Nothing Set for {selectedDay}
+              </p>
+              <button
+                type="button"
+                onClick={() => openAdd('ROUTINE')}
+                className="btn-flat min-h-[48px] px-6 text-xs tracking-wider inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--primary)',
+                  color: 'var(--hero-text)',
+                }}
+              >
+                <Plus size={16} strokeWidth={3} />
+                <span>ADD TO {selectedDay}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2.5">
+                {selectedDaySlots.map((slot, idx) => (
+                  <RoutineCard
+                    key={slot.id}
+                    slot={slot}
+                    index={idx}
+                    onOpenMenu={() => openRoutineMenu(slot)}
+                  />
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => openAdd('ROUTINE')}
+                  className="btn-flat flex-1 min-h-[48px] text-xs tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--primary)',
+                    color: 'var(--hero-text)',
+                  }}
+                >
+                  <Plus size={16} strokeWidth={3} />
+                  <span>ADD TO {selectedDay}</span>
+                </button>
+
+                {selectedDay === todayWeekday && (
                   <button
                     type="button"
-                    onClick={openAdd}
-                    className="btn-3d-main pointer-events-auto w-full min-h-[54px] tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={() => {
+                      loadTodayRoutine();
+                      setScheduleTab('TODAY');
+                    }}
+                    className="btn-flat min-h-[48px] px-4 bg-[#1E1E1E] text-white text-xs tracking-wider flex items-center justify-center gap-1.5 border border-white/10 cursor-pointer shrink-0"
                   >
-                    <Plus size={20} strokeWidth={3} />
-                    <span>ADD FOR TODAY</span>
+                    <CalendarPlus size={15} style={{ color: 'var(--primary)' }} />
+                    <span>LOAD TODAY</span>
                   </button>
-                </div>
-              </div>,
-              document.body
-            )}
-        </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
-      {showAdd && (
+      {addMode && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="dna-card w-full max-w-sm p-5 border border-white/10 space-y-4 animate-item-in">
             <div className="flex items-center justify-between">
@@ -202,7 +419,7 @@ export function ScheduleView() {
               </span>
               <button
                 type="button"
-                onClick={() => setShowAdd(false)}
+                onClick={() => setAddMode(null)}
                 aria-label="Close"
                 className="btn-flat w-9 h-9 bg-[#000000] text-[#8A8A8A] hover:text-white flex items-center justify-center cursor-pointer"
               >
@@ -215,9 +432,9 @@ export function ScheduleView() {
                 <h2 className="font-display text-2xl font-extrabold uppercase text-white">
                   What to Study?
                 </h2>
-                {chapterChips.length > 0 && (
+                {quickChips.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto no-scrollbar">
-                    {chapterChips.map((chip) => {
+                    {quickChips.map((chip) => {
                       const selected = title === chip;
                       return (
                         <button
@@ -265,7 +482,7 @@ export function ScheduleView() {
                 <h2 className="font-display text-2xl font-extrabold uppercase text-white">
                   How Many Minutes?
                 </h2>
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-4 gap-2">
                   {MINUTE_CHIPS.map((m) => {
                     const active = minutes === m;
                     return (
@@ -273,13 +490,13 @@ export function ScheduleView() {
                         key={m}
                         type="button"
                         onClick={() => setMinutes(m)}
-                        className="btn-flat min-h-[50px] font-mono-num text-sm cursor-pointer"
+                        className="btn-flat min-h-[48px] font-mono-num text-xs sm:text-sm cursor-pointer"
                         style={{
                           backgroundColor: active ? 'var(--primary)' : '#000000',
                           color: active ? 'var(--hero-text)' : '#FFFFFF',
                         }}
                       >
-                        {m} MIN
+                        {m}M
                       </button>
                     );
                   })}
@@ -287,8 +504,12 @@ export function ScheduleView() {
                 <button
                   type="button"
                   onClick={() => {
-                    addPlanItem(title, minutes);
-                    setShowAdd(false);
+                    if (addMode === 'TODAY') {
+                      addPlanItem(title, minutes);
+                    } else {
+                      addRoutineSlot(selectedDay, title, minutes);
+                    }
+                    setAddMode(null);
                   }}
                   className="btn-flat w-full min-h-[48px] text-sm tracking-wider cursor-pointer"
                   style={{
@@ -306,11 +527,25 @@ export function ScheduleView() {
 
       <LongPressActionModal
         open={Boolean(deleteTarget)}
-        itemLabel={deleteTarget ? `${deleteTarget.title} - ${deleteTarget.minutes} min` : ''}
-        allowEdit={false}
+        itemLabel={deleteTarget?.title || ''}
         onClose={() => setDeleteTarget(null)}
+        onEdit={(newTitle) => {
+          if (deleteTarget) renamePlanItem(deleteTarget.id, newTitle);
+        }}
         onDelete={() => {
           if (deleteTarget) deletePlanItem(deleteTarget.id);
+        }}
+      />
+
+      <LongPressActionModal
+        open={Boolean(deleteRoutineTarget)}
+        itemLabel={deleteRoutineTarget?.title || ''}
+        onClose={() => setDeleteRoutineTarget(null)}
+        onEdit={(newTitle) => {
+          if (deleteRoutineTarget) renameRoutineSlot(selectedDay, deleteRoutineTarget.id, newTitle);
+        }}
+        onDelete={() => {
+          if (deleteRoutineTarget) deleteRoutineSlot(selectedDay, deleteRoutineTarget.id);
         }}
       />
     </div>

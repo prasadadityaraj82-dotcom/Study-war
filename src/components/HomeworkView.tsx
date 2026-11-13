@@ -27,6 +27,8 @@ function HomeworkRow({
         if (e.key === 'Enter' || e.key === ' ') onToggle();
       }}
       className={`card-flat animate-item-in pl-4 pr-2.5 py-4 sm:py-5 flex items-center gap-3.5 cursor-pointer border transition-all duration-150 ${
+        item.done ? 'card-done-sweep ' : ''
+      }${
         isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : ''
       }`}
       style={{
@@ -72,6 +74,7 @@ export function HomeworkView() {
   const {
     state,
     addHomework,
+    renameHomework,
     toggleHomeworkDone,
     deleteHomework,
     clearDoneHomework,
@@ -103,7 +106,7 @@ export function HomeworkView() {
           </h1>
           {showHint && state.homework.length > 0 && !hasDone && (
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#8A8A8A] shrink-0">
-              HOLD TO DELETE
+              HOLD TO EDIT
             </span>
           )}
         </div>
@@ -164,8 +167,10 @@ export function HomeworkView() {
       <LongPressActionModal
         open={Boolean(deleteTarget)}
         itemLabel={deleteTarget?.text || ''}
-        allowEdit={false}
         onClose={() => setDeleteTarget(null)}
+        onEdit={(newText) => {
+          if (deleteTarget) renameHomework(deleteTarget.id, newText);
+        }}
         onDelete={() => {
           if (deleteTarget) deleteHomework(deleteTarget.id);
         }}

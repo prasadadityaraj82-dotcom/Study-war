@@ -39,6 +39,8 @@ function TargetRow({
             : 'rgba(255, 255, 255, 0.08)',
       }}
       className={`animate-item-in rounded-[16px] pl-4 pr-2 py-3 flex items-center gap-3 cursor-pointer border transition-all duration-150 ${
+        target.done ? 'card-done-sweep ' : ''
+      }${
         isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : 'active:scale-[0.98]'
       }`}
     >
@@ -84,6 +86,7 @@ function SubjectGridCard({
   onOpenMenu: () => void;
 }) {
   const { handlers, isHolding } = useLongPress(onOpenMenu, onOpen);
+  const allDone = totalCount > 0 && doneCount === totalCount;
   return (
     <div
       {...handlers}
@@ -94,7 +97,12 @@ function SubjectGridCard({
       }}
       style={{
         animationDelay: `${index * 80}ms`,
-        borderColor: isHolding ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
+        backgroundColor: allDone ? 'rgba(34, 197, 94, 0.14)' : '#1E1E1E',
+        borderColor: isHolding
+          ? 'var(--primary)'
+          : allDone
+            ? 'rgba(34, 197, 94, 0.55)'
+            : 'rgba(255,255,255,0.06)',
       }}
       className={`card-flat animate-card-in p-4 text-left cursor-pointer flex flex-col justify-between min-h-[112px] border transition-all duration-150 ${
         isHolding ? 'scale-[0.97] ring-2 ring-[var(--primary)]/50' : ''
@@ -125,9 +133,16 @@ function SubjectGridCard({
       </div>
 
       <div className="mt-3">
-        <p className="font-mono-num text-xs sm:text-sm font-extrabold text-white uppercase">
-          {totalCount === 0 ? 'NO CHAPTER YET' : `${doneCount} / ${totalCount} Done`}
-        </p>
+        {allDone ? (
+          <p className="font-mono-num text-xs sm:text-sm font-extrabold text-[#4ADE80] uppercase inline-flex items-center gap-1">
+            <Check size={14} strokeWidth={3} />
+            <span>ALL DONE</span>
+          </p>
+        ) : (
+          <p className="font-mono-num text-xs sm:text-sm font-extrabold text-white uppercase">
+            {totalCount === 0 ? 'NO CHAPTER YET' : `${doneCount} / ${totalCount} Done`}
+          </p>
+        )}
         <p className="text-[10px] font-bold uppercase text-[#8A8A8A] mt-0.5">
           Class {subject.studentClass}
         </p>

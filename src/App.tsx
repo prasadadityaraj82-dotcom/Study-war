@@ -4,7 +4,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { WifiOff } from 'lucide-react';
 import { BottomNav } from './components/BottomNav';
+import { CelebrationBurst } from './components/CelebrationBurst';
 import { FocusView } from './components/FocusView';
 import { HomeView } from './components/HomeView';
 import { HomeworkView } from './components/HomeworkView';
@@ -18,11 +20,13 @@ import { SubjectsView } from './components/SubjectsView';
 import { TomorrowView } from './components/TomorrowView';
 import { TopBar } from './components/TopBar';
 import { StudyProvider, useStudy } from './context/StudyContext';
+import { useOnlineStatus } from './hooks/usePWAInstall';
 import { soundEngine } from './utils/soundEngine';
 
 function StudyWarShell() {
-  const { activeTab, focusLaunchCount, toast } = useStudy();
+  const { activeTab, focusLaunchCount, toast, celebrationCount } = useStudy();
   const [showSplash, setShowSplash] = useState(true);
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     const handlePointerDown = (e: PointerEvent) => {
@@ -82,6 +86,21 @@ function StudyWarShell() {
 
       <TopBar />
 
+      {!isOnline && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="w-full max-w-5xl mx-auto px-3 sm:px-6 pt-2"
+        >
+          <div className="rounded-xl bg-[#1E1E1E] border border-[#FB923C]/40 px-3.5 py-2 flex items-center justify-center gap-2 text-[#FB923C]">
+            <WifiOff size={14} className="shrink-0" />
+            <span className="text-[11px] font-extrabold uppercase tracking-wider">
+              OFFLINE MODE — READY
+            </span>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 pt-3 pb-28 overflow-x-hidden">
         <div key={activeTab} className="animate-screen">
           {renderScreen()}
@@ -101,6 +120,8 @@ function StudyWarShell() {
           {toast}
         </div>
       )}
+
+      <CelebrationBurst burstKey={celebrationCount} />
 
       <BottomNav />
     </div>
